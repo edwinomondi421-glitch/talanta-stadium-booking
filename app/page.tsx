@@ -94,13 +94,20 @@ export default function Home() {
                       From {event.price}
                     </div>
 
-                    <button
-                      className="book-button"
-                      disabled
-                      style={{ opacity: 0.65 }}
-                    >
-                      Demo tickets coming soon
-                    </button>
+                    
+<a
+  href={`/events/${event.id}`}
+  className="book-button"
+>
+  Choose Tickets →
+</a>
+                    
+                      
+                      
+                  
+                    
+                    
+                
                   </div>
                 </article>
               ))}
