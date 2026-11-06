@@ -1,32 +1,70 @@
+"use client";
 
-const events = [
-  {
-    id: 1,
-    name: "Football Match",
-    category: "FOOTBALL",
-    date: "Coming Soon",
-    venue: "Talanta Stadium, Nairobi",
-    price: "KES 500",
-  },
-  {
-    id: 2,
-    name: "Music Concert",
-    category: "MUSIC",
-    date: "Coming Soon",
-    venue: "Talanta Stadium, Nairobi",
-    price: "KES 1,000",
-  },
-  {
-    id: 3,
-    name: "Sports Tournament",
-    category: "SPORTS",
-    date: "Coming Soon",
-    venue: "Talanta Stadium, Nairobi",
-    price: "KES 300",
-  },
-];
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+
+type Event = {
+  id: string;
+  name: string;
+  description: string | null;
+  venue: string | null;
+  event_date: string | null;
+  status: string;
+};
+
+type TicketType = {
+  event_id: string;
+  price_kes: number;
+};
 
 export default function Home() {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [prices, setPrices] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadEvents() {
+      const { data: eventData, error: eventError } =
+        await supabase
+          .from("events")
+          .select("*")
+          .eq("status", "published")
+          .order("created_at", { ascending: false });
+
+      if (eventError) {
+        console.error("Events error:", eventError);
+        setLoading(false);
+        return;
+      }
+
+      const { data: ticketData, error: ticketError } =
+        await supabase
+          .from("ticket_types")
+          .select("event_id, price_kes");
+
+      if (ticketError) {
+        console.error("Ticket prices error:", ticketError);
+        setLoading(false);
+        return;
+      }
+
+      const priceMap: Record<string, number> = {};
+
+      (ticketData as TicketType[]).forEach((ticket) => {
+        priceMap[ticket.event_id] = Math.min(
+          priceMap[ticket.event_id] ?? Infinity,
+          Number(ticket.price_kes)
+        );
+      });
+
+      setEvents(eventData as Event[]);
+      setPrices(priceMap);
+      setLoading(false);
+    }
+
+    loadEvents();
+  }, []);
+
   return (
     <>
       <header className="navbar">
@@ -76,42 +114,49 @@ export default function Home() {
               <span>Discover what's happening</span>
             </div>
 
-            <div className="events-grid">
-              {events.map((event) => (
-                <article className="event-card" key={event.id}>
-                  <div className="event-image">
-                    {event.category}
-                  </div>
-
-                  <div className="event-details">
-                    <p>{event.category}</p>
-                    <h3>{event.name}</h3>
-
-                    <p>📅 {event.date}</p>
-                    <p>📍 {event.venue}</p>
-
-                    <div className="event-price">
-                      From {event.price}
+            {loading ? (
+              <p>Loading events...</p>
+            ) : events.length === 0 ? (
+              <p>No published events are available yet.</p>
+            ) : (
+              <div className="events-grid">
+                {events.map((event) => (
+                  <article className="event-card" key={event.id}>
+                    <div className="event-image">
+                      {event.name.toUpperCase()}
                     </div>
 
-                    
-<a
-  href={`/events/${event.id}`}
-  className="book-button"
->
-  Choose Tickets →
-</a>
-                    
-                      
-                      
-                  
-                    
-                    
-                
-                  </div>
-                </article>
-              ))}
-            </div>
+                    <div className="event-details">
+                      <p>{event.description?.split(".")[0] || "EVENT"}</p>
+                      <h3>{event.name}</h3>
+
+                      <p>
+                        📅{" "}
+                        {event.event_date
+                          ? new Date(event.event_date).toLocaleDateString()
+                          : "Coming Soon"}
+                      </p>
+
+                      <p>📍 {event.venue || "Venue to be announced"}</p>
+
+                      <div className="event-price">
+                        From{" "}
+                        {prices[event.id] !== undefined
+                          ? `KES ${prices[event.id].toLocaleString()}`
+                          : "Price unavailable"}
+                      </div>
+
+                      <a
+                        href={`/events/${event.id}`}
+                        className="book-button"
+                      >
+                        Choose Tickets →
+                      </a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -130,9 +175,7 @@ export default function Home() {
       <footer className="footer" id="contact">
         <div className="container">
           <h3>TALANTA STADIUM BOOKING</h3>
-          <p>
-            Discover events. Reserve your experience.
-          </p>
+          <p>Discover events. Reserve your experience.</p>
           <p>
             © 2026 Talanta Stadium Booking. Demonstration
             platform.
@@ -141,4 +184,6 @@ export default function Home() {
       </footer>
     </>
   );
-            }
+}
+
+            
