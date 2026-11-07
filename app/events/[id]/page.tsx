@@ -1,30 +1,104 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
-const ticketTypes = [
-  { name: "Regular", price: 500 },
-  { name: "VIP", price: 1500 },
-  { name: "VVIP", price: 3000 },
-];
+type Event = {
+  id: string;
+  name: string;
+  description: string | null;
+  venue: string | null;
+  event_date: string | null;
+};
+
+type TicketType = {
+  id: string;
+  name: string;
+  price_kes: number;
+  quantity_total: number;
+  quantity_sold: number;
+};
 
 export default function EventPage() {
-  const [quantities, setQuantities] = useState([0, 0, 0]);
+  const params = useParams<{ id: string }>();
+  const eventId = params.id;
 
-  const total = quantities.reduce(
-    (sum, quantity, index) =>
-      sum + quantity * ticketTypes[index].price,
+  const [event, setEvent] = useState<Event | null>(null);
+  const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    async function loadEvent() {
+      const { data: eventData, error: eventError } = await supabase
+        .from("events")
+        .select("*")
+        .eq("id", eventId)
+        .eq("status", "published")
+        .single();
+
+      if (eventError) {
+        setErrorMessage("Unable to load this event. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      const { data: ticketData, error: ticketError } = await supabase
+        .from("ticket_types")
+        .select("*")
+        .eq("event_id", eventId)
+        .order("price_kes", { ascending: true });
+
+      if (ticketError) {
+        setErrorMessage("Unable to load ticket prices. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      setEvent(eventData as Event);
+      setTicketTypes((ticketData || []) as TicketType[]);
+      setLoading(false);
+    }
+
+    if (eventId) {
+      loadEvent();
+    }
+  }, [eventId]);
+
+  function updateQuantity(ticket: TicketType, amount: number) {
+    const available = Math.max(
+      0,
+      ticket.quantity_total - ticket.quantity_sold
+    );
+
+    setQuantities((previous) => ({
+      ...previous,
+      [ticket.id]: Math.max(
+        0,
+        Math.min(10, available, (previous[ticket.id] || 0) + amount)
+      ),
+    }));
+  }
+
+  const total = ticketTypes.reduce(
+    (sum, ticket) =>
+      sum + (quantities[ticket.id] || 0) * Number(ticket.price_kes),
     0
   );
 
-  function updateQuantity(index: number, amount: number) {
-    setQuantities((previous) =>
-      previous.map((value, i) =>
-        i === index
-          ? Math.max(0, Math.min(10, value + amount))
-          : value
-      )
+  if (loading) {
+    return <main style={{ padding: 30 }}>Loading event...</main>;
+  }
+
+  if (errorMessage || !event) {
+    return (
+      <main style={{ padding: 30 }}>
+        <p>{errorMessage || "Event not found."}</p>
+        <a href="/">← Back to Events</a>
+      </main>
     );
   }
 
@@ -58,59 +132,85 @@ export default function EventPage() {
           borderRadius: 12,
           margin: "25px 0"
         }}>
-          <h2>Football Match</h2>
+          <h2>{event.name}</h2>
+
           <p style={{ marginTop: 12 }}>
-            Venue: Talanta Stadium, Nairobi
+            Venue: {event.venue || "Venue to be announced"}
           </p>
+
           <p style={{ marginTop: 8 }}>
-            Date: Coming Soon
+            Date: {event.event_date
+              ? new Date(event.event_date).toLocaleDateString()
+              : "Coming Soon"}
           </p>
+
           <p style={{ marginTop: 8 }}>
-            Demonstration event
+            {event.description || "Event details coming soon"}
           </p>
         </div>
 
         <h2>Select Ticket Category</h2>
 
-        {ticketTypes.map((ticket, index) => (
-          <div key={ticket.name} style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 10,
-            padding: "20px 0",
-            borderBottom: "1px solid #eeeeee"
-          }}>
-            <div>
-              <h3>{ticket.name}</h3>
-              <p style={{ color: "#69766e" }}>
-                KES {ticket.price.toLocaleString()}
-              </p>
-            </div>
+        {ticketTypes.length === 0 ? (
+          <p style={{ marginTop: 15 }}>
+            No tickets are currently available for this event.
+          </p>
+        ) : (
+          ticketTypes.map((ticket) => {
+            const available = Math.max(
+              0,
+              ticket.quantity_total - ticket.quantity_sold
+            );
 
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12
-            }}>
-              <button
-                onClick={() => updateQuantity(index, -1)}
-                style={{ padding: 8 }}
-              >
-                −
-              </button>
+            return (
+              <div key={ticket.id} style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+                padding: "20px 0",
+                borderBottom: "1px solid #eeeeee"
+              }}>
+                <div>
+                  <h3>{ticket.name}</h3>
+                  <p style={{ color: "#69766e" }}>
+                    KES {Number(ticket.price_kes).toLocaleString()}
+                  </p>
+                  <small style={{ color: "#69766e" }}>
+                    {available} tickets available
+                  </small>
+                </div>
 
-              <strong>{quantities[index]}</strong>
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12
+                }}>
+                  <button
+                    onClick={() => updateQuantity(ticket, -1)}
+                    disabled={!quantities[ticket.id]}
+                    style={{ padding: 8 }}
+                  >
+                    −
+                  </button>
 
-              <button
-                onClick={() => updateQuantity(index, 1)}
-                style={{ padding: 8 }}
-              >
-                +
-              </button>
-            </div>
-          </div>
-        ))}
+                  <strong>{quantities[ticket.id] || 0}</strong>
+
+                  <button
+                    onClick={() => updateQuantity(ticket, 1)}
+                    disabled={
+                      available === 0 ||
+                      (quantities[ticket.id] || 0) >= Math.min(10, available)
+                    }
+                    style={{ padding: 8 }}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
 
         <div style={{
           marginTop: 25,
@@ -118,9 +218,7 @@ export default function EventPage() {
           background: "#f5f7f4",
           borderRadius: 10
         }}>
-          <h2>
-            Total: KES {total.toLocaleString()}
-          </h2>
+          <h2>Total: KES {total.toLocaleString()}</h2>
 
           <button
             disabled={total === 0}
@@ -145,4 +243,4 @@ export default function EventPage() {
       </section>
     </main>
   );
-          }
+}
