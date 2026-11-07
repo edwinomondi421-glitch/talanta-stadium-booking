@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     // Get the booking amount from the database.
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("id,total_amount")
+      .select("id,total_amount_kes")
       .eq("id", bookingId)
       .single();
 
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const amount = Math.round(Number(booking.total_amount));
+    const amount = Math.round(Number(booking.total_amount_kes));
 
     if (!Number.isSafeInteger(amount) || amount < 1) {
       return NextResponse.json(
