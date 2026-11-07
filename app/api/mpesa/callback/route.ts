@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -28,22 +27,50 @@ export async function POST(request: Request) {
       (item: any) => item.Name === "MpesaReceiptNumber"
     )?.Value;
 
-    const { error } = await supabase
-      .from("mpesa_transactions")
-      .update({
-        status: resultCode === 0 ? "completed" : "failed",
-        mpesa_receipt_number: receipt || null,
-      })
-      .eq("checkout_request_id", checkoutRequestId);
+    // Update the M-Pesa transaction and retrieve its booking ID.
+    const { data: transaction, error: transactionError } =
+      await supabase
+        .from("mpesa_transactions")
+        .update({
+          status: resultCode === 0 ? "completed" : "failed",
+          mpesa_receipt_number: receipt || null,
+        })
+        .eq("checkout_request_id", checkoutRequestId)
+        .select("booking_id")
+        .maybeSingle();
 
-    if (error) {
-      console.error("M-Pesa callback database error:", error);
+    if (transactionError || !transaction) {
+      console.error(
+        "M-Pesa transaction update failed:",
+        transactionError
+      );
+
+      return NextResponse.json({
+        ResultCode: 0,
+        ResultDesc: "Accepted",
+      });
+    }
+
+    // Only mark the booking as paid after successful payment.
+    if (resultCode === 0) {
+      const { error: bookingError } = await supabase
+        .from("bookings")
+        .update({ status: "paid" })
+        .eq("id", transaction.booking_id);
+
+      if (bookingError) {
+        console.error(
+          "Booking payment update failed:",
+          bookingError
+        );
+      }
     }
 
     return NextResponse.json({
       ResultCode: 0,
       ResultDesc: "Accepted",
     });
+
   } catch (error) {
     console.error("M-Pesa callback error:", error);
 
