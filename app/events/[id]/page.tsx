@@ -94,72 +94,103 @@ export default function EventPage() {
     0
   );
 
-  async function submitBooking() {
-    setErrorMessage("");
-    setSuccessMessage("");
+  
+async function submitBooking() {
+  setErrorMessage("");
+  setSuccessMessage("");
 
-    if (!customerName.trim() || !customerEmail.trim() || !customerPhone.trim()) {
-      setErrorMessage("Please fill in all your details.");
-      return;
+  if (!customerName.trim() || !customerEmail.trim() || !customerPhone.trim()) {
+    setErrorMessage("Please fill in all your details.");
+    return;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())) {
+    setErrorMessage("Please enter a valid email address.");
+    return;
+  }
+
+  const items = ticketTypes
+    .filter((ticket) => (quantities[ticket.id] || 0) > 0)
+    .map((ticket) => ({
+      ticket_type_id: ticket.id,
+      quantity: quantities[ticket.id],
+    }));
+
+  if (items.length === 0) {
+    setErrorMessage("Please select at least one ticket.");
+    return;
+  }
+
+  setSubmitting(true);
+
+  let createdBookingId: string | null = null;
+
+  try {
+    const response = await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: customerName,
+        customer_email: customerEmail,
+        customer_phone: customerPhone,
+        event_id: eventId,
+        items,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Booking failed.");
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())) {
-      setErrorMessage("Please enter a valid email address.");
-      return;
-    }
+    createdBookingId = result.booking_id;
 
-    const items = ticketTypes
-      .filter((ticket) => (quantities[ticket.id] || 0) > 0)
-      .map((ticket) => ({
-        ticket_type_id: ticket.id,
-        quantity: quantities[ticket.id],
-      }));
+    const paymentResponse = await fetch("/api/mpesa/stkpush", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: customerPhone,
+        bookingId: createdBookingId,
+      }),
+    });
 
-    if (items.length === 0) {
-      setErrorMessage("Please select at least one ticket.");
-      return;
-    }
+    const paymentResult = await paymentResponse.json();
 
-    setSubmitting(true);
-
-    try {
-      const response = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer_name: customerName,
-          customer_email: customerEmail,
-          customer_phone: customerPhone,
-          event_id: eventId,
-          items,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Booking failed.");
-      }
-
-      setSuccessMessage(
-        `Booking created successfully! Reference: ${result.booking_id}. Status: Pending payment. Total: KES ${Number(result.total_amount_kes).toLocaleString()}.`
+    if (!paymentResponse.ok || !paymentResult.success) {
+      throw new Error(
+        paymentResult.error || "M-Pesa payment request failed."
       );
+    }
 
+    setSuccessMessage(
+      `Booking created successfully! Reference: ${createdBookingId}. M-Pesa payment request sent to ${customerPhone}. Please check your phone.`
+    );
+
+    setShowCheckout(false);
+    setQuantities({});
+    setCustomerName("");
+    setCustomerEmail("");
+    setCustomerPhone("");
+
+  } catch (error) {
+    if (createdBookingId) {
+      setSuccessMessage(
+        `Booking ${createdBookingId} was created, but the M-Pesa request could not be confirmed. Please contact support before making another booking.`
+      );
       setShowCheckout(false);
-      setQuantities({});
-      setCustomerName("");
-      setCustomerEmail("");
-      setCustomerPhone("");
-    } catch (error) {
+    } else {
       setErrorMessage(
         error instanceof Error
           ? error.message
           : "Unable to create booking. Please try again."
       );
-    } finally {
-      setSubmitting(false);
     }
+  } finally {
+    setSubmitting(false);
   }
+}
+  
 
   if (loading) {
     return <main style={{ padding: 30 }}>Loading event...</main>;
