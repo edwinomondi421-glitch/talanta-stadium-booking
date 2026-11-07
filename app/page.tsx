@@ -21,7 +21,7 @@ export default function Home() {
   const [events, setEvents] = useState<Event[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
-
+const [errorMessage, setErrorMessage] = useState("");
   useEffect(() => {
     async function loadEvents() {
       const { data: eventData, error: eventError } =
@@ -33,6 +33,7 @@ export default function Home() {
 
       if (eventError) {
         console.error("Events error:", eventError);
+        setErrorMessage(eventError.message);
         setLoading(false);
         return;
       }
@@ -44,6 +45,7 @@ export default function Home() {
 
       if (ticketError) {
         console.error("Ticket prices error:", ticketError);
+        setErrorMessage(ticketError.message);
         setLoading(false);
         return;
       }
@@ -114,7 +116,9 @@ export default function Home() {
               <span>Discover what's happening</span>
             </div>
 
-            {loading ? (
+            {errorMessage ? (
+  <p>Supabase error: {errorMessage}</p>
+) : loading ? (
               <p>Loading events...</p>
             ) : events.length === 0 ? (
               <p>No published events are available yet.</p>
